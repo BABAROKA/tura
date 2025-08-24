@@ -11,27 +11,33 @@ struct Cli {
     loop_song: bool,
 }
 
-fn main() {
-    let cli = Cli::parse();
-    let mut cmd = Command::new("yt-dlp");
-    let url: String;
-    cmd.args(["-f", "bestaudio", "ytsearch1:the fat rat monody", "--get-url"]);
-
-    match cmd.output() {
-        Ok(output) => {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if let Some(url_str) = stdout.split("\n").next() {
-                    url = url_str.to_string();
-                    println!("playing this song {song}", song = url);
-                } else {
-                    panic!("No song found");
-                }
-                return;
-            }
-        }
-        Err(err) => {
-            panic!("Couldnt get song {err}");
-        }
+fn get_playable_url(mut song: String) -> Result<String, ()> {
+    if !song.contains("youtube.com/") || !song.contains("youtu.be/") {
+        song = format!("ytsearch1:{}", song);
     }
+
+    let mut cmd = Command::new("yt-dlp");
+    cmd.args(["-f", "bestaudio", &song, "--get-url"]);
+
+    let output = cmd.output().map_err(|err| {
+        eprintln!("ERROR: command didnt execute");
+    })?;
+
+    if !output.status.success() {
+        eprintln!("ERROR: youtube command wasnt a success");
+        return Err(());
+    }
+
+    if let Some(url) = String::from_utf8_lossy(&output.stdout).split("\n").next() {
+        return Ok(url.to_string());
+    }
+
+    eprintln!("ERROR: couldnt get audio url");
+    return Err(());
+}
+
+fn main() -> Result<(), ()>{
+    let cli = Cli::parse();
+    let url = get_playable_url(cli.play)?;
+    return Ok(());
 }
