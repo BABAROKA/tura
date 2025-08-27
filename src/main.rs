@@ -1,8 +1,5 @@
 use clap::Parser;
-use reqwest::blocking::get;
-use std::process::{Command};
-use rodio::{OutputStreamBuilder, Sink, Decoder};
-use std::io::{Cursor, Read};
+use std::process::{ Command, Child };
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -33,6 +30,7 @@ fn get_playable_url(mut song: String) -> Result<String, ()> {
     }
 
     if let Some(url) = String::from_utf8_lossy(&output.stdout).split("\n").next() {
+        println!("{}", url.to_string());
         return Ok(url.to_string());
     }
 
@@ -40,30 +38,20 @@ fn get_playable_url(mut song: String) -> Result<String, ()> {
     return Err(());
 }
 
-fn main() -> Result<(), ()>{
+fn play_song(url: &str) -> Result<Child, ()>{
+    let mut cmd = Command::new("ffplay");
+    cmd.args(["-nodisp", "-autoexit", url]);
+
+    let child = cmd.spawn().map_err(|err| {
+        eprintln!("ERROR: Couldnt start song {err}");
+    })?;
+    return Ok(child);
+}
+
+fn main() -> Result<(), ()> {
     let cli = Cli::parse();
     let url = get_playable_url(cli.play)?;
+    let song = play_song(&url)?;
 
-    let stream_handle = OutputStreamBuilder::open_default_stream().expect("open default audio stream");
-    let sink = Sink::connect_new(&stream_handle.mixer());
-
-    println!("staring song2");
-    let mut response = get(&url).map_err(|err| {
-        eprintln!("ERROR: Failed to get URL {err}");
-    })?;
-
-    let mut buffer: Vec<u8> = Vec::new();
-    response.read_to_end(&mut buffer).map_err(|err| {
-        eprintln!("ERROR: Reading into buffer {err}");
-    })?;
-
-    let cursor = Cursor::new(buffer);
-    let source = Decoder::new(cursor).map_err(|err| {
-        eprintln!("ERROR: Couldnt decode buffer {err}");
-    })?;
-    println!("staring song");
-    sink.append(source);
-    sink.sleep_until_end();
-    
     return Ok(());
 }
