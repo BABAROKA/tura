@@ -1,5 +1,6 @@
 use clap::Parser;
 use std::process::{Child, Command};
+use std::{thread, time::Duration};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -14,8 +15,7 @@ struct Cli {
     download: bool,
 }
 
-fn get_playable_url(query: &str) -> Result<String, ()> {
-    let mut song = query.to_string();
+fn get_playable_url(mut song: String) -> Result<String, ()> {
     if !song.contains("youtube.com/") && !song.contains("youtu.be/") {
         song = format!("ytsearch1:{}", song);
     }
@@ -52,19 +52,23 @@ fn play_song(url: &str) -> Result<Child, ()> {
 
 fn main() -> Result<(), ()> {
     let cli = Cli::parse();
-    let url = get_playable_url(&cli.play)?;
-    println!("playing {song}", song = cli.play);
 
+    println!("searching song");
+    let url = get_playable_url(cli.play)?;
+
+    println!("playing song");
     let mut song = play_song(&url)?;
     song.wait().map_err(|err| {
         eprintln!("ERROR: Couldnt wait for song {err}");
     })?;
 
+    thread::sleep(Duration::from_secs(2));
     while cli.loop_song {
         let mut song = play_song(&url)?;
         song.wait().map_err(|err| {
             eprintln!("ERROR: Couldnt wait for song {err}");
         })?;
+        thread::sleep(Duration::from_secs(2));
     }
 
     return Ok(());
