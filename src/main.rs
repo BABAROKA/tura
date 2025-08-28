@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::process::{ Command, Child };
+use std::process::{Child, Command};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -9,10 +9,13 @@ struct Cli {
 
     #[arg(short = 'l', long = "loop")]
     loop_song: bool,
+
+    #[arg(short, long)]
+    download: bool,
 }
 
-fn get_playable_url(mut song: String) -> Result<String, ()> {
-    println!("getting song");
+fn get_playable_url(query: &str) -> Result<String, ()> {
+    let mut song = query.to_string();
     if !song.contains("youtube.com/") && !song.contains("youtu.be/") {
         song = format!("ytsearch1:{}", song);
     }
@@ -30,7 +33,6 @@ fn get_playable_url(mut song: String) -> Result<String, ()> {
     }
 
     if let Some(url) = String::from_utf8_lossy(&output.stdout).split("\n").next() {
-        println!("{}", url.to_string());
         return Ok(url.to_string());
     }
 
@@ -38,9 +40,9 @@ fn get_playable_url(mut song: String) -> Result<String, ()> {
     return Err(());
 }
 
-fn play_song(url: &str) -> Result<Child, ()>{
+fn play_song(url: &str) -> Result<Child, ()> {
     let mut cmd = Command::new("ffplay");
-    cmd.args(["-nodisp", "-autoexit", url]);
+    cmd.args(["-nodisp", "-autoexit", "-loglevel", "quiet", url]);
 
     let child = cmd.spawn().map_err(|err| {
         eprintln!("ERROR: Couldnt start song {err}");
@@ -50,8 +52,20 @@ fn play_song(url: &str) -> Result<Child, ()>{
 
 fn main() -> Result<(), ()> {
     let cli = Cli::parse();
-    let url = get_playable_url(cli.play)?;
-    let song = play_song(&url)?;
+    let url = get_playable_url(&cli.play)?;
+    println!("playing {song}", song = cli.play);
+
+    let mut song = play_song(&url)?;
+    song.wait().map_err(|err| {
+        eprintln!("ERROR: Couldnt wait for song {err}");
+    })?;
+
+    while cli.loop_song {
+        let mut song = play_song(&url)?;
+        song.wait().map_err(|err| {
+            eprintln!("ERROR: Couldnt wait for song {err}");
+        })?;
+    }
 
     return Ok(());
 }
