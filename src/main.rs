@@ -1,6 +1,9 @@
+mod db;
+mod music;
+
 use clap::Parser;
+use db::Database;
 use std::process::{Child, Command};
-use std::{thread, time::Duration};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -53,23 +56,25 @@ fn play_song(url: &str) -> Result<Child, ()> {
 fn main() -> Result<(), ()> {
     let cli = Cli::parse();
 
-    println!("searching song");
-    let url = get_playable_url(cli.play)?;
-
-    println!("playing song");
-    let mut song = play_song(&url)?;
-    song.wait().map_err(|err| {
-        eprintln!("ERROR: Couldnt wait for song {err}");
+    let mut cmd = Command::new("yt-dlp");
+    cmd.args([
+        cli.play.as_str(),
+        "--skip-download",
+        "--get-title",
+        "--get-duration",
+    ]);
+    let output = cmd.output().map_err(|err| {
+        eprintln!("Unable to get output from yt-dlp command {err}")
     })?;
-
-    thread::sleep(Duration::from_secs(2));
-    while cli.loop_song {
-        let mut song = play_song(&url)?;
-        song.wait().map_err(|err| {
-            eprintln!("ERROR: Couldnt wait for song {err}");
-        })?;
-        thread::sleep(Duration::from_secs(2));
+    if !output.status.success() {
+        eprintln!("Output wasnt a success");
+        return Err(());
     }
+    let output_sting = String::from_utf8(output.stdout).map_err(|err| {
+        eprintln!("Unable to convert output to string {err}");
+    })?;
+    let data: Vec<&str> = output_sting.split("\n").collect();
+    println!("{:?}", data);
 
     return Ok(());
 }
