@@ -1,6 +1,6 @@
-use std::mem::swap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::mem::swap;
 
 pub fn get_all_songs() -> Option<Vec<String>> {
     let mut songs: Vec<String> = Vec::new();
@@ -17,7 +17,7 @@ pub fn get_all_songs() -> Option<Vec<String>> {
     if songs.len() > 0 {
         return Some(songs);
     }
-    None
+    return None;
 }
 
 pub fn get_song(title: &str) -> Option<String> {
@@ -51,12 +51,30 @@ pub fn write_song(title: &str) -> Result<(), ()> {
     return Ok(());
 }
 
-fn lstein(first: &str, second: &str) -> usize {
+pub fn get_best_match(title: &str) -> Option<String> {
+    if let Some(songs) = get_all_songs() {
+        let mut best: (String, f32) = (String::new(), 0.0);
+        for song in songs {
+            let difference = lstein(&song, title);
+            if best.1 < difference {
+                best = (song, difference);
+            }
+        }
+        return Some(best.0);
+    }
+    return None;
+}
+
+fn lstein(first: &str, second: &str) -> f32 {
     let m = first.len();
     let n = second.len();
 
-    let first_chars: Vec<char> = first.chars().collect();
-    let second_chars: Vec<char> = second.chars().collect();
+    if m == 0 && n == 0 {
+        return 1.0;
+    }
+
+    let first_chars: Vec<char> = first.to_lowercase().chars().collect();
+    let second_chars: Vec<char> = second.to_lowercase().chars().collect();
 
     let mut v0: Vec<usize> = (0..=n).collect();
     let mut v1: Vec<usize> = vec![0; n + 1];
@@ -76,5 +94,8 @@ fn lstein(first: &str, second: &str) -> usize {
         }
         swap(&mut v0, &mut v1);
     }
-    return v0[n];
+    let distance = v0[n];
+    let max_len = m.max(n);
+
+    1.0 - (distance as f32 / max_len as f32)
 }

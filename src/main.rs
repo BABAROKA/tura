@@ -1,8 +1,9 @@
-mod music;
 mod index;
+mod music;
+
+use std::fmt::format;
 
 use clap::Parser;
-use std::mem::swap;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -17,11 +18,16 @@ struct Cli {
     download: bool,
 }
 
-
 fn main() -> Result<(), ()> {
     let cli = Cli::parse();
-    let songs = index::get_all_songs();
-    println!("{:?}", songs);
 
+    if cli.download {
+        music::download(cli.play)?;
+        return Ok(());
+    }
+
+    if let Some(song) = index::get_best_match(&cli.play) {
+        music::play(format!("./songs/{song}.m4a"))?;
+    }
     return Ok(());
 }

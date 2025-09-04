@@ -1,5 +1,7 @@
 use std::process::Command;
-use std::fs;
+use std::fs::{File, self};
+use rodio::{Decoder, OutputStream, source::Source, self};
+
 use crate::index;
 
 pub fn download(mut song: String) -> Result<String, ()> {
@@ -44,3 +46,14 @@ pub fn download(mut song: String) -> Result<String, ()> {
     Ok(song_title)
 }
 
+pub fn play(song: String) -> Result<(), ()> {
+    let stream_handle = rodio::OutputStreamBuilder::open_default_stream()
+        .expect("open default audio stream");
+    let sink = rodio::Sink::connect_new(&stream_handle.mixer());
+    let file = File::open(song).unwrap();
+    let source = Decoder::try_from(file).unwrap();
+    sink.append(source);
+    sink.sleep_until_end();
+
+    Ok(())
+}
