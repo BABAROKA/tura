@@ -11,10 +11,9 @@ impl Database {
             eprintln!("Unable to establish connection to database {err}");
         })?;
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS music (
-                id INTIGER PRIMARY KEY,
-                title TEXT NOT NULL,
-                location TEXT NOT NULL
+            "CREATE VIRTUAL TABLE songs USING fts5(
+                title,
+                duration UNINDEXED
             )",
             (),
         )
@@ -26,6 +25,4 @@ impl Database {
             connection: conn,
         })
     }
-    pub fn write() {}
-    pub fn read() {}
 }
