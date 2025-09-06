@@ -1,6 +1,7 @@
 mod music;
 
 use clap::Parser;
+use music::Song;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -15,8 +16,7 @@ struct Cli {
     download: bool,
 }
 
-fn main() -> Result<(), ()> {
-    let cli = Cli::parse();
-
-    return Ok(());
+fn main() {
+    let song = Song::new();
+    println!("{song:?}");
 }
