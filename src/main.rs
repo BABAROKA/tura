@@ -17,8 +17,5 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    if let Some(song) = music::get_best_match(&cli.play) {
-        println!("{:?}", song);
-        song.play();
-    }
+    music::play_song(&cli.play);
 }

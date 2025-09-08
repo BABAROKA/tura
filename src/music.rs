@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::mem::swap;
 use std::num::ParseIntError;
+use std::path::PathBuf;
 use std::process::Command;
+use strsim::normalized_levenshtein as lstein;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -43,7 +44,7 @@ pub struct Song {
 }
 impl Song {
     fn play(&self) -> Result<(), SongError> {
-        let song = format!("./songs/{}.m4a", self.id);
+        let song = format!("{0}/{1}.m4a", songs_dir().to_str().unwrap(), self.id);
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
         let sink = rodio::Sink::connect_new(&stream_handle.mixer());
         let file = File::open(song)?;
@@ -56,7 +57,8 @@ impl Song {
 
     fn add_song(&self) -> Result<(), SongError> {
         let mut song_list = SongList { songs: Vec::new() };
-        let file = File::open("./songs/index.json")?;
+        let path = format!("{}/index.json", songs_dir().to_str().unwrap());
+        let file = File::open(&path)?;
         let mut reader = BufReader::new(file);
         let mut read_song_list = String::new();
         reader.read_to_string(&mut read_song_list)?;
@@ -67,21 +69,45 @@ impl Song {
 
         let mut song_found = false;
         for song in &mut song_list.songs {
-            if self.title == song.title {
+            if self.id == song.id {
                 song_found = true;
-                if song.searches.len() > 3 {
-                    break;
-                }
-                let search = self.searches[0].clone();
-                song.searches.push(search);
             }
         }
+
         if !song_found {
             song_list.songs.push(self.clone());
         }
 
         let songs_json = serde_json::to_string(&song_list)?;
-        let file = File::create("./songs/index.json")?;
+        let file = File::create(&path)?;
+        let mut writer = BufWriter::new(file);
+        writer.write_all(songs_json.as_bytes())?;
+
+        writer.flush()?;
+
+        Ok(())
+    }
+
+    fn add_search(&self, search: String) -> Result<(), SongError> {
+        let path = format!("{}/index.json", songs_dir().to_str().unwrap());
+        let file = File::open(&path)?;
+        let mut reader = BufReader::new(file);
+        let mut read_song_list = String::new();
+        reader.read_to_string(&mut read_song_list)?;
+
+        let mut song_list: SongList = serde_json::from_str(&read_song_list)?;
+
+        for song in &mut song_list.songs {
+            if self.id == song.id {
+                if song.searches.len() == 3 {
+                    song.searches.remove(0);
+                }
+                song.searches.push(search.clone());
+            }
+        }
+
+        let songs_json = serde_json::to_string(&song_list)?;
+        let file = File::create(&path)?;
         let mut writer = BufWriter::new(file);
         writer.write_all(songs_json.as_bytes())?;
 
@@ -91,31 +117,38 @@ impl Song {
     }
 }
 
-fn play_song(title: &str) {
-    if let Some(song) = get_best_match(title) {
-        song.play();
-    }
-}
-
-fn get_song(title: &str) -> Option<Song> {
-    let file = File::open("./songs/index.json").ok()?;
+pub fn get_all_songs() -> Option<SongList> {
+    let path = format!("{}/index.json", songs_dir().to_str().unwrap());
+    let file = File::open(&path).ok()?;
     let mut reader = BufReader::new(file);
     let mut read_song_list = String::new();
     reader.read_to_string(&mut read_song_list).ok()?;
 
     let song_list: SongList = serde_json::from_str(&read_song_list).ok()?;
-
-    for song in song_list.songs {
-        if song.title == title {
-            return Some(song);
-        }
+    if song_list.songs.len() > 0 {
+        return Some(song_list);
     }
     return None;
 }
 
-pub fn download(search: String) -> Result<Song, SongError> {
-    let path = "songs";
+pub fn play_song(title: &str) {
+    if let Some(song) = get_best_match(title) {
+        song.add_search(title.to_string()).unwrap();
+        song.play().unwrap();
+    } else {
+        println!("Song not found in index\nDownloading");
+        let song = download(title.to_owned());
+        match song {
+            Ok(song) => {
+                song.add_search(title.to_string()).unwrap();
+                song.play().unwrap();
+            }
+            Err(_) => return,
+        }
+    }
+}
 
+fn download(search: String) -> Result<Song, SongError> {
     let mut song = search.clone();
     if !song.contains("youtube.com/") && !song.contains("youtu.be/") {
         song = format!("ytsearch1:{}", song);
@@ -127,7 +160,7 @@ pub fn download(search: String) -> Result<Song, SongError> {
         "--audio-format",
         "m4a",
         "-P",
-        path,
+        songs_dir().to_str().unwrap(),
         "-o",
         "%(id)s.%(ext)s",
         "--print",
@@ -150,8 +183,12 @@ pub fn download(search: String) -> Result<Song, SongError> {
     let song_duration: u32 = lines.next().expect("Unable to get duration").parse()?;
     let song_id = lines.next().expect("Unable to get id").to_string();
 
-    if let Some(song) = get_song(&song_title) {
-        return Ok(song);
+    if let Some(list) = get_all_songs() {
+        for song in list.songs {
+            if song.id == song_id {
+                return Ok(song);
+            }
+        }
     }
 
     let song = Song {
@@ -165,19 +202,6 @@ pub fn download(search: String) -> Result<Song, SongError> {
     Ok(song)
 }
 
-pub fn get_all_songs() -> Option<SongList> {
-    let file = File::open("./songs/index.json").ok()?;
-    let mut reader = BufReader::new(file);
-    let mut read_song_list = String::new();
-    reader.read_to_string(&mut read_song_list).ok()?;
-
-    let song_list: SongList = serde_json::from_str(&read_song_list).ok()?;
-    if song_list.songs.len() > 0 {
-        return Some(song_list);
-    }
-    return None;
-}
-
 fn get_best_match(title: &str) -> Option<Song> {
     let song_list = get_all_songs()?;
 
@@ -185,45 +209,27 @@ fn get_best_match(title: &str) -> Option<Song> {
         .songs
         .into_iter()
         .map(|song| {
-            let difference = lstein(title, &song.title);
+            let mut search_difference: f64 = 0_f64;
+            for search in &song.searches {
+                search_difference += lstein(search, title);
+            }
+            search_difference /= song.searches.len() as f64;
+
+            let difference = (lstein(title, &song.title) * 0.1) + (search_difference * 0.9);
             return (song, difference);
         })
         .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal))?;
 
+    println!("{}", song.1);
+    if song.1 < 0.75 {
+        return None;
+    }
     return Some(song.0);
 }
 
-fn lstein(first: &str, second: &str) -> f32 {
-    let m = first.len();
-    let n = second.len();
-
-    if m == 0 && n == 0 {
-        return 1.0;
-    }
-
-    let first_chars: Vec<char> = first.to_lowercase().chars().collect();
-    let second_chars: Vec<char> = second.to_lowercase().chars().collect();
-
-    let mut v0: Vec<usize> = (0..=n).collect();
-    let mut v1: Vec<usize> = vec![0; n + 1];
-
-    for i in 0..m {
-        v1[0] = i + 1;
-
-        for j in 0..n {
-            let del_cost = v0[j + 1] + 1;
-            let inser_cost = v1[j] + 1;
-            let sub_cost = if first_chars[i] == second_chars[j] {
-                v0[j]
-            } else {
-                v0[j] + 1
-            };
-            v1[j + 1] = del_cost.min(inser_cost).min(sub_cost);
-        }
-        swap(&mut v0, &mut v1);
-    }
-    let distance = v0[n];
-    let max_len = m.max(n);
-
-    1.0 - (distance as f32 / max_len as f32)
+fn songs_dir() -> PathBuf {
+    let mut exe_dir = std::env::current_exe().expect("Failed to get exe path");
+    exe_dir.pop();
+    exe_dir.push("songs");
+    exe_dir
 }
