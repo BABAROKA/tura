@@ -1,21 +1,28 @@
 mod music;
+use music::SongError;
 
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version,name="Tura",about="CLI Oflline Music Player", long_about = None)]
 struct Cli {
-    #[arg(short, long)]
-    play: String,
-
-    #[arg(short = 'l', long = "loop")]
-    loop_song: bool,
+    song: String,
 
     #[arg(short, long)]
     download: bool,
+
+    #[arg(short = 'l', long = "loop")]
+    loop_song: bool,
 }
 
-fn main() {
+fn main() -> Result<(), SongError> {
     let cli = Cli::parse();
-    music::play_song(&cli.play);
+    music::play_song(&cli.song, cli.download)?;
+
+    if cli.loop_song {
+        loop {
+            music::play_song(&cli.song, cli.download)?;
+        }
+    }
+    Ok(())
 }
