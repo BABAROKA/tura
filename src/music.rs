@@ -3,7 +3,7 @@ use rodio::{self, Decoder, decoder::DecoderError, stream::StreamError};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Write};
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::process::Command;
@@ -42,7 +42,7 @@ impl SongList {
             return Ok(());
         }
         song_list.songs.push(new_song.clone());
-        write_all_songs(song_list)?;
+        write_all_songs(&song_list)?;
         Ok(())
     }
 
@@ -50,13 +50,22 @@ impl SongList {
         let mut song_list: SongList = get_all_songs()?;
 
         if let Some(song) = song_list.songs.iter_mut().find(|s| s.id == new_song.id) {
+            let score = song
+                .searches
+                .last()
+                .map(|last| lstein(&last, search))
+                .unwrap_or(0.0);
+            if score < 0.5 {
+                return Ok(());
+            }
             if song.searches.len() == 3 {
-                song.searches.remove(0);
+                song.searches.rotate_left(1);
+                song.searches.pop();
             }
             song.searches.push(search.to_owned());
         }
 
-        return write_all_songs(song_list);
+        return write_all_songs(&song_list);
     }
 }
 
@@ -124,10 +133,11 @@ pub fn loop_song(title: &str, download: bool) -> Result<(), SongError> {
 }
 
 fn download_song(search: String) -> Result<Song, SongError> {
-    let mut song = search.clone();
-    if !song.contains("youtube.com/") && !song.contains("youtu.be/") {
-        song = format!("ytsearch1:{}", song);
-    }
+    let song: String = if !search.contains("youtube.com/") && !search.contains("youtu.be/") {
+        format!("ytsearch1:{}", search)
+    } else {
+        search
+    };
 
     let mut cmd = Command::new("yt-dlp");
     cmd.args([
@@ -177,7 +187,7 @@ fn download_song(search: String) -> Result<Song, SongError> {
         id: song_id,
         title: song_title,
         duration: song_duration,
-        searches: vec![search],
+        searches: vec![song],
     };
 
     SongList::add_song(&song)?;
@@ -187,19 +197,17 @@ fn download_song(search: String) -> Result<Song, SongError> {
 fn get_all_songs() -> Result<SongList, SongError> {
     let path = songs_dir().join("index.json");
     let file = File::open(&path)?;
-    let mut reader = BufReader::new(file);
-    let mut read_song_list = String::new();
-    reader.read_to_string(&mut read_song_list)?;
+    let reader = BufReader::new(file);
 
-    let song_list: SongList = serde_json::from_str(&read_song_list)?;
+    let song_list: SongList = serde_json::from_reader(reader)?;
     Ok(song_list)
 }
 
-fn write_all_songs(song_list: SongList) -> Result<(), SongError> {
+fn write_all_songs(song_list: &SongList) -> Result<(), SongError> {
     let path = songs_dir().join("index.json");
     let file = File::create(&path)?;
     let mut writer = BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &song_list)?;
+    serde_json::to_writer(&mut writer, song_list)?;
     writer.flush()?;
     Ok(())
 }
@@ -224,7 +232,7 @@ fn get_best_match(title: &str) -> Option<(Song, f64)> {
             let difference = (lstein(title, &song.title) * 0.1) + (search_difference * 0.9);
             return (song, difference);
         })
-        .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal))?;
+        .max_by(|x, y| x.1.total_cmp(&y.1))?;
 
     Some(data)
 }
