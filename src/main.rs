@@ -17,12 +17,10 @@ struct Cli {
 
 fn main() -> Result<(), SongError> {
     let cli = Cli::parse();
-    music::play_song(&cli.song, cli.download)?;
 
     if cli.loop_song {
-        loop {
-            music::play_song(&cli.song, cli.download)?;
-        }
+        music::loop_song(&cli.song, cli.download)?;
     }
+    music::play_song(&cli.song, cli.download)?;
     Ok(())
 }

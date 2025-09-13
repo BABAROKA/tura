@@ -1,3 +1,4 @@
+use rodio::Source;
 use rodio::{self, Decoder, decoder::DecoderError, stream::StreamError};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -67,11 +68,17 @@ pub struct Song {
     searches: Vec<String>,
 }
 impl Song {
-    fn play(&self) -> Result<(), SongError> {
+    fn play(&self, loop_song: bool) -> Result<(), SongError> {
         let song = songs_dir().join(format!("{}.m4a", self.id));
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
         let sink = rodio::Sink::connect_new(&stream_handle.mixer());
         let file = File::open(song)?;
+        if loop_song {
+            let source = Decoder::try_from(file)?.repeat_infinite();
+            sink.append(source);
+            sink.sleep_until_end();
+            return Ok(());
+        }
         let source = Decoder::try_from(file)?;
         sink.append(source);
         sink.sleep_until_end();
@@ -81,6 +88,7 @@ impl Song {
 }
 
 pub fn play_song(title: &str, download: bool) -> Result<(), SongError> {
+    let dont_loop = false;
     if !download {
         if let Some((song, lstein)) = get_best_match(title) {
             println!("Found best score {}: '{}'", lstein as f32, song.title);
@@ -88,7 +96,7 @@ pub fn play_song(title: &str, download: bool) -> Result<(), SongError> {
                 println!("Use -d to download the correct song");
             }
             SongList::add_search(&song, title)?;
-            song.play()?;
+            song.play(dont_loop)?;
             return Ok(());
         }
     }
@@ -98,7 +106,20 @@ pub fn play_song(title: &str, download: bool) -> Result<(), SongError> {
 
     println!("Found song: '{}'", song.title);
     SongList::add_search(&song, title)?;
-    song.play()?;
+    song.play(dont_loop)?;
+    Ok(())
+}
+
+pub fn loop_song(title: &str, download: bool) -> Result<(), SongError> {
+    let do_loop = true;
+    if let Some((song, lstein)) = get_best_match(title) {
+        println!("Found best score {}: '{}'", lstein as f32, song.title);
+        if download {
+            println!("Unable to download when looping");
+        }
+        SongList::add_search(&song, title)?;
+        song.play(do_loop)?;
+    }
     Ok(())
 }
 
