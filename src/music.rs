@@ -55,7 +55,7 @@ impl SongList {
                 .last()
                 .map(|last| lstein(&last, search))
                 .unwrap_or(0.0);
-            if score < 0.5 {
+            if score < 0.7 {
                 return Ok(());
             }
             if song.searches.len() == 3 {
@@ -66,6 +66,12 @@ impl SongList {
         }
 
         return write_all_songs(&song_list);
+    }
+    fn remove(old_song: &Song) -> Result<(), SongError> {
+        let mut song_list: SongList = get_all_songs()?;
+        song_list.songs.retain(|song| song.id != old_song.id);
+        write_all_songs(&song_list)?;
+        Ok(())
     }
 }
 
@@ -98,10 +104,12 @@ impl Song {
 
 pub fn play_song(title: &str, download: bool) -> Result<(), SongError> {
     let dont_loop = false;
+    let song_count = 1;
     if !download {
-        if let Some((song, lstein)) = get_best_match(title) {
-            println!("Found best score {}: '{}'", lstein as f32, song.title);
-            if lstein < 0.75 {
+        if let Some(songs) = get_best_match(title, song_count) {
+            let (song, score) = songs.first().unwrap();
+            println!("Found best score {}: '{}'", *score as f32, song.title);
+            if *score < 0.75 {
                 println!("Use -d to download the correct song");
             }
             SongList::add_search(&song, title)?;
@@ -121,13 +129,54 @@ pub fn play_song(title: &str, download: bool) -> Result<(), SongError> {
 
 pub fn loop_song(title: &str, download: bool) -> Result<(), SongError> {
     let do_loop = true;
-    if let Some((song, lstein)) = get_best_match(title) {
-        println!("Found best score {}: '{}'", lstein as f32, song.title);
+    let song_count = 1;
+    if let Some(songs) = get_best_match(title, song_count) {
+        let (song, score) = songs.first().unwrap();
+        println!("Found best score {}: '{}'", *score as f32, song.title);
         if download {
             println!("Unable to download when looping");
         }
         SongList::add_search(&song, title)?;
         song.play(do_loop)?;
+    }
+    Ok(())
+}
+
+pub fn remove_song(title: &str) -> Result<(), SongError> {
+    let song_count = 3;
+    if let Some(songs) = get_best_match(title, song_count) {
+        println!("Found three best matches. Which one to remove");
+        for (i, (song, score)) in songs.iter().enumerate() {
+            println!(
+                " - {i}. {song} - {score}",
+                i = i + 1,
+                song = song.title,
+                score = *score as f32
+            );
+        }
+        print!("\nEnter the number of the song you want to remove: ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+
+        let song_num: usize = input.trim().parse().unwrap();
+        if song_num > 3 || song_num < 1 {
+            println!("Not a number in the list");
+            return Ok(());
+        }
+        let song = &songs[song_num - 1].0;
+        SongList::remove(song)?;
+    }
+
+    Ok(())
+}
+
+pub fn show_songs() -> Result<(), SongError> {
+    let song_list = get_all_songs()?;
+    println!("\n{} Songs", song_list.songs.len());
+    for song in song_list.songs {
+        println!(" - {}", song.title);
     }
     Ok(())
 }
@@ -212,13 +261,16 @@ fn write_all_songs(song_list: &SongList) -> Result<(), SongError> {
     Ok(())
 }
 
-fn get_best_match(title: &str) -> Option<(Song, f64)> {
+fn get_best_match(title: &str, song_count: usize) -> Option<Vec<(Song, f64)>> {
     let song_list = get_all_songs().ok()?;
-    if song_list.songs.len() == 0 {
+    if song_list.songs.is_empty() {
+        return None;
+    }
+    if song_count == 0 {
         return None;
     }
 
-    let data = song_list
+    let mut data: Vec<(Song, f64)> = song_list
         .songs
         .into_iter()
         .map(|song| {
@@ -232,9 +284,11 @@ fn get_best_match(title: &str) -> Option<(Song, f64)> {
             let difference = (lstein(title, &song.title) * 0.1) + (search_difference * 0.9);
             return (song, difference);
         })
-        .max_by(|x, y| x.1.total_cmp(&y.1))?;
+        .collect();
 
-    Some(data)
+    data.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let songs: Vec<(Song, f64)> = data.into_iter().take(song_count).collect();
+    Some(songs)
 }
 
 fn songs_dir() -> PathBuf {
