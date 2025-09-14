@@ -182,10 +182,10 @@ pub fn show_songs() -> Result<(), SongError> {
 }
 
 fn download_song(search: String) -> Result<Song, SongError> {
-    let song: String = if !search.contains("youtube.com/") && !search.contains("youtu.be/") {
-        format!("ytsearch1:{}", search)
+    let song: &str = if !search.contains("youtube.com/") && !search.contains("youtu.be/") {
+        &format!("ytsearch1:{}", search)
     } else {
-        search
+        &search
     };
 
     let mut cmd = Command::new("yt-dlp");
@@ -204,7 +204,7 @@ fn download_song(search: String) -> Result<Song, SongError> {
         "after_move:duration",
         "--print",
         "after_move:id",
-        &song,
+        song,
     ]);
 
     let output = cmd.output()?;
@@ -236,7 +236,7 @@ fn download_song(search: String) -> Result<Song, SongError> {
         id: song_id,
         title: song_title,
         duration: song_duration,
-        searches: vec![song],
+        searches: vec![search],
     };
 
     SongList::add_song(&song)?;
@@ -281,6 +281,7 @@ fn get_best_match(title: &str, song_count: usize) -> Option<Vec<(Song, f64)>> {
                 .sum::<f64>()
                 / song.searches.len() as f64;
 
+            println!("{}", search_difference);
             let difference = (lstein(title, &song.title) * 0.1) + (search_difference * 0.9);
             return (song, difference);
         })
