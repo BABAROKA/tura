@@ -88,14 +88,12 @@ impl Song {
         let stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
         let sink = rodio::Sink::connect_new(&stream_handle.mixer());
         let file = File::open(song)?;
-        if loop_song {
-            let source = Decoder::try_from(file)?.repeat_infinite();
-            sink.append(source);
-            sink.sleep_until_end();
-            return Ok(());
-        }
         let source = Decoder::try_from(file)?;
-        sink.append(source);
+        if loop_song {
+            sink.append(source.repeat_infinite());
+        } else {
+            sink.append(source);
+        }
         sink.sleep_until_end();
 
         Ok(())
@@ -281,7 +279,6 @@ fn get_best_match(title: &str, song_count: usize) -> Option<Vec<(Song, f64)>> {
                 .sum::<f64>()
                 / song.searches.len() as f64;
 
-            println!("{}", search_difference);
             let difference = (lstein(title, &song.title) * 0.1) + (search_difference * 0.9);
             return (song, difference);
         })

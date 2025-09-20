@@ -2,6 +2,9 @@ mod music;
 use music::SongError;
 
 use clap::Parser;
+use crossterm::event::{Event, KeyCode, poll, read};
+use ratatui::{DefaultTerminal, Frame};
+use std::{thread, time::Duration};
 
 #[derive(Parser)]
 #[command(version,name="Tura",about="CLI Oflline Music Player", long_about = None)]
@@ -21,9 +24,7 @@ struct Cli {
     all_songs: bool,
 }
 
-fn main() -> Result<(), SongError> {
-    let cli = Cli::parse();
-
+fn check_cli(cli: Cli) -> Result<(), SongError> {
     if cli.all_songs {
         music::show_songs()?;
     }
@@ -47,4 +48,45 @@ fn main() -> Result<(), SongError> {
         music::play_song(&song, cli.download)?;
     }
     Ok(())
+}
+
+fn main() {
+    let cli = Cli::parse();
+    thread::scope(|s| {
+        s.spawn(|| {
+            check_cli(cli).unwrap();
+        });
+
+        s.spawn(|| {
+            tui();
+        });
+    });
+}
+
+fn tui() {
+    color_eyre::install().unwrap();
+    let terminal = ratatui::init();
+    run(terminal);
+    ratatui::restore();
+}
+
+fn run(mut terminal: DefaultTerminal) {
+    loop {
+        terminal.draw(render).unwrap();
+        if poll(Duration::ZERO).unwrap() {
+            match read().unwrap() {
+                Event::Key(event) => match event.code {
+                    KeyCode::Char('q') => {
+                        break;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
+fn render(frame: &mut Frame) {
+    frame.render_widget("hello world", frame.area());
 }
