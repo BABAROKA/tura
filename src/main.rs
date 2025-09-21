@@ -1,10 +1,13 @@
 mod music;
 use music::SongError;
 
+mod tui;
+use tui::Action;
+
 use clap::Parser;
-use crossterm::event::{Event, KeyCode, poll, read};
-use ratatui::{DefaultTerminal, Frame};
-use std::{thread, time::Duration};
+use std::sync::mpsc::{channel, Sender};
+use std::thread;
+
 
 #[derive(Parser)]
 #[command(version,name="Tura",about="CLI Oflline Music Player", long_about = None)]
@@ -24,7 +27,7 @@ struct Cli {
     all_songs: bool,
 }
 
-fn check_cli(cli: Cli) -> Result<(), SongError> {
+fn check_cli(cli: Cli, tx: Sender<Action>) -> Result<(), SongError> {
     if cli.all_songs {
         music::show_songs()?;
     }
@@ -47,46 +50,14 @@ fn check_cli(cli: Cli) -> Result<(), SongError> {
     if let Some(song) = cli.song {
         music::play_song(&song, cli.download)?;
     }
+    tx.send(Action::Quit).unwrap();
     Ok(())
 }
 
 fn main() {
+    let (tx, rx) = channel();
     let cli = Cli::parse();
-    thread::scope(|s| {
-        s.spawn(|| {
-            check_cli(cli).unwrap();
-        });
 
-        s.spawn(|| {
-            tui();
-        });
-    });
-}
-
-fn tui() {
-    color_eyre::install().unwrap();
-    let terminal = ratatui::init();
-    run(terminal);
-    ratatui::restore();
-}
-
-fn run(mut terminal: DefaultTerminal) {
-    loop {
-        terminal.draw(render).unwrap();
-        if poll(Duration::ZERO).unwrap() {
-            match read().unwrap() {
-                Event::Key(event) => match event.code {
-                    KeyCode::Char('q') => {
-                        break;
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
-    }
-}
-
-fn render(frame: &mut Frame) {
-    frame.render_widget("hello world", frame.area());
+    thread::spawn(|| check_cli(cli, tx));
+    tui::init(rx);
 }
