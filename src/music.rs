@@ -1,3 +1,5 @@
+use crate::tui::Action;
+
 use rodio::Source;
 use rodio::{self, Decoder, decoder::DecoderError, stream::StreamError};
 use serde::{Deserialize, Serialize};
@@ -7,6 +9,7 @@ use std::io::{self, BufReader, BufWriter, Write};
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::mpsc::{Sender, SendError};
 use strsim::normalized_levenshtein as lstein;
 use thiserror::Error;
 
@@ -26,6 +29,9 @@ pub enum SongError {
 
     #[error("Failed to decode music data: {0}")]
     Decode(#[from] DecoderError),
+
+    #[error("Failed to send action in channel: {0}")]
+    ActionError(#[from] SendError<Action>),
 
     #[error("Yt-dlp command failed: {0}")]
     YtDlpError(String),
@@ -100,49 +106,45 @@ impl Song {
     }
 }
 
-pub fn play_song(title: &str, download: bool) -> Result<(), SongError> {
+pub fn play_song(title: String, download: bool, tx: &Sender<Action>) -> Result<(), SongError> {
     let dont_loop = false;
     let song_count = 1;
     if !download {
-        if let Some(songs) = get_best_match(title, song_count) {
-            let (song, score) = songs.first().unwrap();
-            println!("Found best score {}: '{}'", *score as f32, song.title);
-            if *score < 0.75 {
-                println!("Use -d to download the correct song");
-            }
-            SongList::add_search(&song, title)?;
+        if let Some(songs) = get_best_match(&title, song_count) {
+            let (song, _) = songs.first().unwrap();
+            SongList::add_search(&song, &title)?;
+            tx.send(Action::Playing(song.title.clone()))?;
             song.play(dont_loop)?;
             return Ok(());
         }
     }
 
-    println!("Downloading song: '{}'", title);
-    let song = download_song(title.to_string())?;
+    tx.send(Action::Downloading)?;
+    let song = download_song(&title)?;
 
-    println!("Found song: '{}'", song.title);
-    SongList::add_search(&song, title)?;
+    SongList::add_search(&song, &title)?;
+
+    tx.send(Action::Playing(song.title.clone()))?;
     song.play(dont_loop)?;
     Ok(())
 }
 
-pub fn loop_song(title: &str, download: bool) -> Result<(), SongError> {
+pub fn loop_song(title: String, tx: &Sender<Action >) -> Result<(), SongError> {
     let do_loop = true;
     let song_count = 1;
-    if let Some(songs) = get_best_match(title, song_count) {
-        let (song, score) = songs.first().unwrap();
-        println!("Found best score {}: '{}'", *score as f32, song.title);
-        if download {
-            println!("Unable to download when looping");
-        }
-        SongList::add_search(&song, title)?;
+    if let Some(songs) = get_best_match(&title, song_count) {
+        let (song, _) = songs.first().unwrap();
+        SongList::add_search(&song, &title)?;
+
+        tx.send(Action::Playing(song.title.clone()))?;
         song.play(do_loop)?;
     }
     Ok(())
 }
 
-pub fn remove_song(title: &str) -> Result<(), SongError> {
+pub fn remove_song(title: String) -> Result<(), SongError> {
     let song_count = 3;
-    if let Some(songs) = get_best_match(title, song_count) {
+    if let Some(songs) = get_best_match(&title, song_count) {
         println!("Found three best matches. Which one to remove");
         for (i, (song, score)) in songs.iter().enumerate() {
             println!(
@@ -179,11 +181,11 @@ pub fn show_songs() -> Result<(), SongError> {
     Ok(())
 }
 
-fn download_song(search: String) -> Result<Song, SongError> {
+fn download_song(search: &str) -> Result<Song, SongError> {
     let song: &str = if !search.contains("youtube.com/") && !search.contains("youtu.be/") {
         &format!("ytsearch1:{}", search)
     } else {
-        &search
+        search
     };
 
     let mut cmd = Command::new("yt-dlp");
@@ -234,7 +236,7 @@ fn download_song(search: String) -> Result<Song, SongError> {
         id: song_id,
         title: song_title,
         duration: song_duration,
-        searches: vec![search],
+        searches: vec![search.to_string()],
     };
 
     SongList::add_song(&song)?;

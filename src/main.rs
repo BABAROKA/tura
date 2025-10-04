@@ -5,9 +5,8 @@ mod tui;
 use tui::Action;
 
 use clap::Parser;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
-
 
 #[derive(Parser)]
 #[command(version,name="Tura",about="CLI Oflline Music Player", long_about = None)]
@@ -34,7 +33,7 @@ fn check_cli(cli: Cli, tx: Sender<Action>) -> Result<(), SongError> {
 
     if cli.remove {
         match cli.song {
-            Some(song) => music::remove_song(&song)?,
+            Some(song) => music::remove_song(song)?,
             None => println!("No song was written"),
         }
         return Ok(());
@@ -42,13 +41,13 @@ fn check_cli(cli: Cli, tx: Sender<Action>) -> Result<(), SongError> {
 
     if cli.loop_song {
         match cli.song {
-            Some(song) => music::loop_song(&song, cli.download)?,
+            Some(song) => music::loop_song(song, &tx)?,
             None => println!("No song was written"),
         }
         return Ok(());
     }
     if let Some(song) = cli.song {
-        music::play_song(&song, cli.download)?;
+        music::play_song(song, cli.download, &tx)?;
     }
     tx.send(Action::Quit).unwrap();
     Ok(())
