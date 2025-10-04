@@ -56,7 +56,12 @@ fn check_cli(cli: Cli, tx: Sender<Action>) -> Result<(), SongError> {
 fn main() {
     let (tx, rx) = channel();
     let cli = Cli::parse();
+    let song = cli.song.clone();
 
     thread::spawn(|| check_cli(cli, tx));
-    tui::init(rx);
+    if let Some(_) = song {
+        tui::init(rx);
+    } else {
+        rx.recv().unwrap();
+    }
 }
